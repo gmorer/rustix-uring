@@ -5,12 +5,14 @@
 use core::convert::TryInto;
 use core::mem;
 
+use linux_raw_sys::general as c;
 use rustix::fd::RawFd;
+use rustix::process::WaitIdOptions;
 
 use crate::squeue::Entry;
 use crate::squeue::Entry128;
 use crate::sys;
-use crate::types::{self, sealed};
+use crate::types::{self, sealed, IdType};
 
 macro_rules! assign_fd {
     ( $sqe:ident . fd = $opfd:expr ) => {
@@ -1750,6 +1752,38 @@ opcode! {
     }
 }
 
+// === 6.5 ===
+opcode! {
+    /// Issue  the  equivalent  of  a  waitid(2)  system  call
+    /// Available since kernel 6.5.
+    pub struct WaitId {
+        // idtype_t idtype,
+        // id_t id,
+        // siginfo_t *infop,
+        // int options, unsigned int flags)
+        id: { impl sealed::UseFixed },
+        idtype: { IdType },
+        siginfo: { *mut c::siginfo_t },
+        options: {WaitIdOptions},
+        ;;
+    }
+
+    pub const CODE = sys::IoringOp::Waitid;
+
+    pub fn build(self) -> Entry {
+        let WaitId { id, idtype, siginfo, options } = self;
+
+        let mut sqe = sqe_zeroed();
+        sqe.opcode = Self::CODE;
+        assign_fd!(sqe.fd = id);
+        sqe.len.len = idtype as u32;
+        sqe.off_or_addr2.addr2.ptr = siginfo as _;
+        // sqe.__bindgen_anon_3.waitid_flags = flags;
+        sqe.splice_fd_in_or_file_index_or_addr_len.file_index = options.bits();
+        Entry(sqe)
+    }
+}
+
 // === 6.7 ===
 
 opcode! {
@@ -2000,6 +2034,55 @@ opcode! {
         sqe.buf.buf_group = buf_group;
         sqe.flags |= sys::IoringSqeFlags::BUFFER_SELECT;
         sqe.ioprio.recv_flags = sys::IoringRecvFlags::MULTISHOT | sys::IoringRecvFlags::BUNDLE;
+        Entry(sqe)
+    }
+}
+
+// === 6.11 ===
+
+opcode! {
+    /// Issue  the  equivalent  of  a  bind(2)  system  call
+    /// Available since kernel 6.11.
+    pub struct Bind {
+        fd: { impl sealed::UseFixed },
+        addr: { *const sys::SocketAddrOpaque },
+        addrlen: { sys::SocketAddrLen }
+        ;;
+        // TODO: flags
+    }
+
+    pub const CODE = sys::IoringOp::Bind;
+
+    pub fn build(self) -> Entry {
+        let Bind { fd, addr, addrlen } = self;
+
+        let mut sqe = sqe_zeroed();
+        sqe.opcode = Self::CODE;
+        assign_fd!(sqe.fd = fd);
+        sqe.addr_or_splice_off_in.addr.ptr = addr as _;
+        sqe.off_or_addr2.addr2.ptr = addrlen as _;
+        Entry(sqe)
+    }
+}
+
+opcode! {
+    /// Issue  the  equivalent  of  a  listen(2)  system  call
+    /// Available since kernel 6.11.
+    pub struct Listen {
+        fd: { impl sealed::UseFixed },
+        backlog: { u32 },
+        ;;
+    }
+
+    pub const CODE = sys::IoringOp::Listen;
+
+    pub fn build(self) -> Entry {
+        let Listen { fd, backlog } = self;
+
+        let mut sqe = sqe_zeroed();
+        sqe.opcode = Self::CODE;
+        assign_fd!(sqe.fd = fd);
+        sqe.len.len = backlog;
         Entry(sqe)
     }
 }

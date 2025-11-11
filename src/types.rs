@@ -676,6 +676,14 @@ impl FutexWaitV {
     }
 }
 
+#[repr(u8)]
+pub enum IdType {
+    P_ALL,   /* Wait for any child.  */
+    P_PID,   /* Wait for specified process.  */
+    P_PGID,  /* Wait for members of process group.  */
+    P_PIDFD, /* Wait for the child referred by the PID file descriptor.  */
+}
+
 #[cfg(test)]
 mod tests {
     use core::time::Duration;
